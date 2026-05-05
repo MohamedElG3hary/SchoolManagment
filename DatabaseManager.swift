@@ -84,13 +84,15 @@ class DatabaseManager {
             }
         }
     }
-    func insertStudent(name: String, email: String, password: String) {
+    func insertStudent(name: String, email: String, password: String) -> Int? {
         let query = "INSERT INTO Students (name, email, password) VALUES ('\(name)', '\(email)', '\(password)');"
         var errorMessage: UnsafeMutablePointer<Int8>? = nil
-        
+        var insertedId: Int? = nil
+
         query.withCString { queryCString in
             if sqlite3_exec(db, queryCString, nil, nil, &errorMessage) == SQLITE_OK {
-                print("Successfully added student: \(name)")
+                insertedId = Int(sqlite3_last_insert_rowid(db))
+                print("Successfully added student: \(name) with id=\(insertedId ?? -1)")
             } else {
                 if let errorMsg = errorMessage {
                     let errorString = String(cString: errorMsg)
@@ -99,15 +101,18 @@ class DatabaseManager {
                 }
             }
         }
+        return insertedId
     }
     
-    func insertTeacher(name: String, email: String, password: String) {
+    func insertTeacher(name: String, email: String, password: String) -> Int? {
         let query = "INSERT INTO Teachers (name, email, password) VALUES ('\(name)', '\(email)', '\(password)');"
         var errorMessage: UnsafeMutablePointer<Int8>? = nil
-        
+        var insertedId: Int? = nil
+
         query.withCString { queryCString in
             if sqlite3_exec(db, queryCString, nil, nil, &errorMessage) == SQLITE_OK {
-                print("Successfully added teacher: \(name)")
+                insertedId = Int(sqlite3_last_insert_rowid(db))
+                print("Successfully added teacher: \(name) with id=\(insertedId ?? -1)")
             } else {
                 if let errorMsg = errorMessage {
                     let errorString = String(cString: errorMsg)
@@ -116,14 +121,147 @@ class DatabaseManager {
                 }
             }
         }
+        return insertedId
     }
     
     func addUser(_ user: User) {
         if let student = user as? Student {
-            insertStudent(name: student.name, email: student.email, password: student.password)
+            _ = insertStudent(name: student.name, email: student.email, password: student.password)
         } else if let teacher = user as? Teacher {
-            insertTeacher(name: teacher.name, email: teacher.email, password: teacher.password)
+            _ = insertTeacher(name: teacher.name, email: teacher.email, password: teacher.password)
         }
+    }
+
+    // MARK: - User creation helpers (ensure uniqueness and linking)
+    func emailExists(_ email: String) -> Bool {
+        var exists = false
+        let queries = [
+            "SELECT COUNT(*) FROM Students WHERE email = '\(email)';",
+            "SELECT COUNT(*) FROM Teachers WHERE email = '\(email)';",
+            "SELECT COUNT(*) FROM Admins WHERE email = '\(email)';"
+        ]
+        var statement: OpaquePointer? = nil
+
+        for q in queries {
+            if sqlite3_prepare_v2(db, q, -1, &statement, nil) == SQLITE_OK {
+                if sqlite3_step(statement) == SQLITE_ROW {
+                    let count = Int(sqlite3_column_int(statement, 0))
+                    if count > 0 { exists = true }
+                }
+            }
+            sqlite3_finalize(statement)
+            if exists { break }
+        }
+        return exists
+    }
+
+    func fetchUserByEmail(_ email: String) -> User? {
+        var user: User? = nil
+        var statement: OpaquePointer? = nil
+
+        // Admins
+        let adminQuery = "SELECT id, name, email, password FROM Admins WHERE email = '\(email)';"
+        if sqlite3_prepare_v2(db, adminQuery, -1, &statement, nil) == SQLITE_OK {
+            if sqlite3_step(statement) == SQLITE_ROW {
+                let id = Int(sqlite3_column_int(statement, 0))
+                let namePointer = sqlite3_column_text(statement, 1)
+                let adminName = namePointer != nil ? String(cString: namePointer!) : ""
+                let emailPointer = sqlite3_column_text(statement, 2)
+                let emailFromDB = emailPointer != nil ? String(cString: emailPointer!) : ""
+                let passwordPointer = sqlite3_column_text(statement, 3)
+                let passwordFromDB = passwordPointer != nil ? String(cString: passwordPointer!) : ""
+                user = Admin(id: id, name: adminName, email: emailFromDB, password: passwordFromDB)
+            }
+        }
+        sqlite3_finalize(statement)
+
+        if user != nil { return user }
+
+        // Teachers
+        let teacherQuery = "SELECT id, name, email, password FROM Teachers WHERE email = '\(email)';"
+        if sqlite3_prepare_v2(db, teacherQuery, -1, &statement, nil) == SQLITE_OK {
+            if sqlite3_step(statement) == SQLITE_ROW {
+                let id = Int(sqlite3_column_int(statement, 0))
+                let namePointer = sqlite3_column_text(statement, 1)
+                let teacherName = namePointer != nil ? String(cString: namePointer!) : ""
+                let emailPointer = sqlite3_column_text(statement, 2)
+                let emailFromDB = emailPointer != nil ? String(cString: emailPointer!) : ""
+                let passwordPointer = sqlite3_column_text(statement, 3)
+                let passwordFromDB = passwordPointer != nil ? String(cString: passwordPointer!) : ""
+                user = Teacher(id: id, name: teacherName, email: emailFromDB, password: passwordFromDB)
+            }
+        }
+        sqlite3_finalize(statement)
+
+        if user != nil { return user }
+
+        // Students
+        let studentQuery = "SELECT id, name, email, password FROM Students WHERE email = '\(email)';"
+        if sqlite3_prepare_v2(db, studentQuery, -1, &statement, nil) == SQLITE_OK {
+            if sqlite3_step(statement) == SQLITE_ROW {
+                let id = Int(sqlite3_column_int(statement, 0))
+                let namePointer = sqlite3_column_text(statement, 1)
+                let studentName = namePointer != nil ? String(cString: namePointer!) : ""
+                let emailPointer = sqlite3_column_text(statement, 2)
+                let emailFromDB = emailPointer != nil ? String(cString: emailPointer!) : ""
+                let passwordPointer = sqlite3_column_text(statement, 3)
+                let passwordFromDB = passwordPointer != nil ? String(cString: passwordPointer!) : ""
+                user = Student(id: id, name: studentName, email: emailFromDB, password: passwordFromDB)
+            }
+        }
+        sqlite3_finalize(statement)
+
+        return user
+    }
+
+    func insertAdmin(name: String, email: String, password: String) -> Int? {
+        let query = "INSERT INTO Admins (name, email, password) VALUES ('\(name)', '\(email)', '\(password)');"
+        var errorMessage: UnsafeMutablePointer<Int8>? = nil
+        var insertedId: Int? = nil
+
+        query.withCString { queryCString in
+            if sqlite3_exec(db, queryCString, nil, nil, &errorMessage) == SQLITE_OK {
+                insertedId = Int(sqlite3_last_insert_rowid(db))
+                print("Successfully added admin: \(name) with id=\(insertedId ?? -1)")
+            } else {
+                if let errorMsg = errorMessage {
+                    let errorString = String(cString: errorMsg)
+                    print("Failed to add admin. Error: \(errorString)")
+                    sqlite3_free(errorMessage)
+                }
+            }
+        }
+        return insertedId
+    }
+
+    func createUserAccount(role: String, name: String, email: String, password: String) -> User? {
+        print("Creating user...")
+        if emailExists(email) {
+            print("User already exists")
+            return fetchUserByEmail(email)
+        }
+
+        if role == "student" {
+            print("Creating student profile...")
+            if let id = insertStudent(name: name, email: email, password: password) {
+                print("User linked to student successfully")
+                return Student(id: id, name: name, email: email, password: password)
+            }
+        } else if role == "teacher" {
+            print("Creating teacher profile...")
+            if let id = insertTeacher(name: name, email: email, password: password) {
+                print("User linked to teacher successfully")
+                return Teacher(id: id, name: name, email: email, password: password)
+            }
+        } else if role == "admin" {
+            print("Creating admin account...")
+            if let id = insertAdmin(name: name, email: email, password: password) {
+                print("User linked to admin successfully")
+                return Admin(id: id, name: name, email: email, password: password)
+            }
+        }
+
+        return nil
     }
     
     func addCourse(name: String) {
@@ -240,11 +378,13 @@ class DatabaseManager {
     
     func getStudentsInCourse(courseId: Int) -> String {
         var result = ""
+        print("[DB_QUERY] getStudentsInCourse called with courseId=\(courseId)")
         let query = """
-        SELECT s.id, s.name, g.grade
+        SELECT s.id, s.name, COALESCE(g.grade, NULL)
         FROM Students s
-        JOIN Grades g ON s.id = g.studentId
-        WHERE g.courseId = \(courseId);
+        JOIN Enrollments e ON s.id = e.studentId
+        LEFT JOIN Grades g ON s.id = g.studentId AND g.courseId = e.courseId
+        WHERE e.courseId = \(courseId);
         """
         var statement: OpaquePointer? = nil
         
@@ -255,16 +395,24 @@ class DatabaseManager {
                 let id = Int(sqlite3_column_int(statement, 0))
                 let namePointer = sqlite3_column_text(statement, 1)
                 let name = namePointer != nil ? String(cString: namePointer!) : ""
-                let grade = sqlite3_column_double(statement, 2)
-                result += "[ID: \(id)] \(name) - Grade: \(grade)\n"
+                let gradeIsNull = sqlite3_column_type(statement, 2) == SQLITE_NULL
+                if gradeIsNull {
+                    result += "[ID: \(id)] \(name) - Grade: N/A\n"
+                } else {
+                    let grade = sqlite3_column_double(statement, 2)
+                    result += "[ID: \(id)] \(name) - Grade: \(grade)\n"
+                }
             }
             if !found {
                 result = "No students found."
+                print("[DB_QUERY] No enrolled students found for courseId=\(courseId)")
             }
         } else {
             result = "Error fetching students."
+            print("[DB_QUERY] Failed to prepare SQL statement for courseId=\(courseId)")
         }
         sqlite3_finalize(statement)
+        print("[DB_QUERY] getStudentsInCourse returning: \(result)")
         return result
     }
     
@@ -415,8 +563,8 @@ class DatabaseManager {
     func authenticateUser(name: String, password: String) -> User? {
         var user: User? = nil
         
-        // Check Admins table first
-        let adminQuery = "SELECT id, name, email, password FROM Admins WHERE name = '\(name)' AND password = '\(password)';"
+        // Check Admins table first (match by email or name)
+        let adminQuery = "SELECT id, name, email, password FROM Admins WHERE (email = '\(name)' OR name = '\(name)') AND password = '\(password)';"
         var statement: OpaquePointer? = nil
         
         if sqlite3_prepare_v2(db, adminQuery, -1, &statement, nil) == SQLITE_OK {
@@ -436,7 +584,7 @@ class DatabaseManager {
         
         // Check Teachers table
         if user == nil {
-            let teacherQuery = "SELECT id, name, email, password FROM Teachers WHERE name = '\(name)' AND password = '\(password)';"
+            let teacherQuery = "SELECT id, name, email, password FROM Teachers WHERE (email = '\(name)' OR name = '\(name)') AND password = '\(password)';"
             var teacherStatement: OpaquePointer? = nil
             
             if sqlite3_prepare_v2(db, teacherQuery, -1, &teacherStatement, nil) == SQLITE_OK {
@@ -457,7 +605,7 @@ class DatabaseManager {
         
         // Check Students table
         if user == nil {
-            let studentQuery = "SELECT id, name, email, password FROM Students WHERE name = '\(name)' AND password = '\(password)';"
+            let studentQuery = "SELECT id, name, email, password FROM Students WHERE (email = '\(name)' OR name = '\(name)') AND password = '\(password)';"
             var studentStatement: OpaquePointer? = nil
             
             if sqlite3_prepare_v2(db, studentQuery, -1, &studentStatement, nil) == SQLITE_OK {

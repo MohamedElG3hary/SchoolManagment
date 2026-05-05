@@ -127,8 +127,15 @@ class TeacherDashboardViewController: BaseViewController {
     }
     
     func viewStudentsTapped() {
+        print("[TeacherDashboard] Show Students tapped")
         if let idText = targetCourseIdField.text, let courseId = Int(idText) {
-            studentsListArea.text = DatabaseManager.shared.getStudentsInCourse(courseId: courseId)
+            print("[TeacherDashboard] Loading students for courseId=\(courseId)")
+            studentsListArea.text = "Loading students..."
+            let studentsText = DatabaseManager.shared.getStudentsInCourse(courseId: courseId)
+            studentsListArea.text = studentsText
+        }
+        else {
+            studentsListArea.text = "Please enter a valid course ID."
         }
     }
 

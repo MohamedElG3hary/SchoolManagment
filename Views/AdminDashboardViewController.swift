@@ -29,38 +29,33 @@ class AdminDashboardViewController: BaseViewController {
         super.viewDidLoad()
         self.view.backgroundColor = AppTheme.mainBackground
         
-        // --- Column 1: Navigation ---
-        titleLabel = Label(frame: Rect(x: 40, y: 30, width: 280, height: 40))
-        titleLabel.text = "NAVIGATION"
-        self.view.addSubview(titleLabel)
-        
-        myProfileBtn = Button(frame: Rect(x: 40, y: 90, width: 280, height: 45))
+        myProfileBtn = Button(frame: Rect(x: 60, y: 30, width: 220, height: 44))
         myProfileBtn.setTitle("MY PROFILE", forState: Control.State.normal)
         myProfileBtn.backgroundColor = AppTheme.primaryButton
         myProfileBtn.addTarget(self, action: AdminDashboardViewController.showProfile, for: Control.Event.primaryActionTriggered)
         self.view.addSubview(myProfileBtn)
-        
-        refreshBtn = Button(frame: Rect(x: 40, y: 145, width: 280, height: 45))
+
+        refreshBtn = Button(frame: Rect(x: 60, y: 90, width: 220, height: 44))
         refreshBtn.setTitle("REFRESH USERS", forState: Control.State.normal)
         refreshBtn.backgroundColor = AppTheme.primaryButton
         refreshBtn.addTarget(self, action: AdminDashboardViewController.refreshTapped, for: Control.Event.primaryActionTriggered)
         self.view.addSubview(refreshBtn)
-        
-        refreshCoursesBtn = Button(frame: Rect(x: 40, y: 200, width: 280, height: 45))
+
+        refreshCoursesBtn = Button(frame: Rect(x: 60, y: 150, width: 220, height: 44))
         refreshCoursesBtn.setTitle("REFRESH COURSES", forState: Control.State.normal)
         refreshCoursesBtn.backgroundColor = AppTheme.primaryButton
         refreshCoursesBtn.addTarget(self, action: AdminDashboardViewController.refreshCoursesTapped, for: Control.Event.primaryActionTriggered)
         self.view.addSubview(refreshCoursesBtn)
-        
-        let usersCard = View(frame: Rect(x: 40, y: 270, width: 300, height: 320))
-        usersCard.backgroundColor = AppTheme.cardBackground
+
+        let usersCard = View(frame: Rect(x: 40, y: 220, width: 260, height: 260))
+        usersCard.backgroundColor = Color.white 
         self.view.addSubview(usersCard)
-        
-        usersListLabel = Label(frame: Rect(x: 10, y: 10, width: 280, height: 300))
+
+        usersListLabel = Label(frame: Rect(x: 10, y: 10, width: 240, height: 240))
         usersListLabel.text = "No users found."
         usersCard.addSubview(usersListLabel)
-        
-        logoutButton = Button(frame: Rect(x: 40, y: 620, width: 140, height: 45))
+
+        logoutButton = Button(frame: Rect(x: 60, y: 500, width: 220, height: 44))
         logoutButton.setTitle("LOGOUT", forState: Control.State.normal)
         logoutButton.backgroundColor = AppTheme.secondaryButton
         logoutButton.addTarget(self, action: AdminDashboardViewController.logout, for: Control.Event.primaryActionTriggered)
@@ -122,6 +117,15 @@ class AdminDashboardViewController: BaseViewController {
         statusLabel.text = " Ready."
         statusLabel.backgroundColor = AppTheme.lightBackground
         self.view.addSubview(statusLabel)
+
+        // Courses list card
+        let coursesCard = View(frame: Rect(x: 720, y: 460, width: 300, height: 140))
+        coursesCard.backgroundColor = AppTheme.cardBackground
+        self.view.addSubview(coursesCard)
+
+        coursesListView = Label(frame: Rect(x: 10, y: 10, width: 280, height: 120))
+        coursesListView.text = "No courses found."
+        coursesCard.addSubview(coursesListView)
     }
 
     private func createStyledTextField(frame: Rect, placeholder: String) -> TextField {
@@ -141,15 +145,62 @@ class AdminDashboardViewController: BaseViewController {
     }
 
     func addUserTapped() {
-        print("Add user clicked")
+        print("Creating user...")
+        let name = nameTextField.text ?? ""
+        let role = (roleTextField.text ?? "").lowercased()
+        let email = emailTextField.text ?? ""
+        let password = passwordTextField.text ?? ""
+
+        guard email.count > 0, password.count > 0, role.count > 0 else {
+            statusLabel.text = "Missing required fields."
+            return
+        }
+
+        if role == "student" || role == "teacher" || role == "admin" {
+            if let created = DatabaseManager.shared.createUserAccount(role: role, name: name, email: email, password: password) {
+                statusLabel.text = "User created: \(created.email)"
+                print("User linked to \(role) successfully")
+                // Refresh users list so UI immediately reflects DB
+                refreshTapped()
+            } else {
+                statusLabel.text = "User already exists or creation failed."
+            }
+        } else {
+            statusLabel.text = "Role must be student/teacher/admin."
+        }
     }
 
     func refreshTapped() {
-        print("Refresh users clicked")
+        print("Refreshing users...")
+        let users = DatabaseManager.shared.fetchUsers()
+        print("Users fetched: \(users.count) items")
+
+        if users.isEmpty {
+            usersListLabel.text = "No users found."
+        } else {
+            var text = ""
+            for u in users {
+                let role = (u is Student) ? "Student" : ((u is Teacher) ? "Teacher" : "User")
+                text += "[ID: \(u.id)] \(u.name) - \(role) - \(u.email)\n"
+            }
+            usersListLabel.text = text
+        }
     }
 
     func refreshCoursesTapped() {
-        print("Refresh courses clicked")
+        print("Refreshing courses...")
+        let courses = DatabaseManager.shared.fetchAllCourses()
+        print("Courses fetched: \(courses.count) items")
+
+        if courses.isEmpty {
+            coursesListView.text = "No courses found."
+        } else {
+            var text = ""
+            for c in courses {
+                text += "[ID: \(c.id)] \(c.name)\n"
+            }
+            coursesListView.text = text
+        }
     }
 
     func showProfile() {
